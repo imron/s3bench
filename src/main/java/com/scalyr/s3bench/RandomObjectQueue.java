@@ -1,4 +1,4 @@
-package com.scalyr.s3performance;
+package com.scalyr.s3bench;
 
 import java.nio.IntBuffer;
 

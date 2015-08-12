@@ -1,9 +1,9 @@
-package com.scalyr.s3performance;
+package com.scalyr.s3bench;
 
-import com.scalyr.s3performance.DataObject;
-import com.scalyr.s3performance.RandomObjectQueue;
-import com.scalyr.s3performance.TaskInfo;
-import com.scalyr.s3performance.Timer;
+import com.scalyr.s3bench.DataObject;
+import com.scalyr.s3bench.RandomObjectQueue;
+import com.scalyr.s3bench.TaskInfo;
+import com.scalyr.s3bench.Timer;
 
 import java.util.Random;
 

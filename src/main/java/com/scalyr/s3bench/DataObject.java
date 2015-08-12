@@ -1,4 +1,4 @@
-package com.scalyr.s3performance;
+package com.scalyr.s3bench;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
@@ -6,7 +6,7 @@ import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 
-import com.scalyr.s3performance.TaskInfo;
+import com.scalyr.s3bench.TaskInfo;
 
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;

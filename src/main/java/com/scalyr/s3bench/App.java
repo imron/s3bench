@@ -1,4 +1,4 @@
-package com.scalyr.s3performance;
+package com.scalyr.s3bench;
 
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.regions.Region;
@@ -12,10 +12,10 @@ import com.amazonaws.services.s3.model.ListObjectsRequest;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 
-import com.scalyr.s3performance.BucketInfo;
-import com.scalyr.s3performance.RandomIdBuffer;
-import com.scalyr.s3performance.RandomObjectQueue;
-import com.scalyr.s3performance.Timer;
+import com.scalyr.s3bench.BucketInfo;
+import com.scalyr.s3bench.RandomIdBuffer;
+import com.scalyr.s3bench.RandomObjectQueue;
+import com.scalyr.s3bench.Timer;
 
 import java.nio.IntBuffer;
 
