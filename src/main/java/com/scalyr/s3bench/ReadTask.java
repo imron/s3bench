@@ -9,19 +9,11 @@ import java.io.DataInputStream;
 
 import org.apache.logging.log4j.Logger;
 
-class ReadTask implements Runnable
+class ReadTask extends Task
 {
-    private TaskInfo taskInfo;
-    private RandomObjectQueue objectQueue;
-    private DataObject dataObject;
-    private int successfulOperations;
-    private int errorCount;
-
     public ReadTask( TaskInfo taskInfo, RandomObjectQueue objectQueue )
     {
-        this.taskInfo = taskInfo;
-        this.objectQueue = objectQueue;
-        this.dataObject = null;
+        super( taskInfo, objectQueue );
     }
 
     public void prepare()
@@ -34,16 +26,6 @@ class ReadTask implements Runnable
         {
             this.dataObject.clear();
         }
-    }
-
-    public int successfulOperations()
-    {
-        return this.successfulOperations;
-    }
-
-    public int errorCount()
-    {
-        return this.errorCount;
     }
 
     public void run()

@@ -38,17 +38,24 @@ public class App
 
     private static final int[] OBJECT_SIZES_IN_KB = { 256, 1024, 4096, 16384 };
     private static final int[] READ_THREAD_COUNTS = { 1, 2, 4, 8, 16, 32, 64 };
+    private static final int DEFAULT_TASKS = 64;
     private static final int DEFAULT_TIMEOUT = 20000;
     private static final int MAX_CONNECTIONS = 64;
+    private static final int MIN_BUCKET_NAME_LENGTH = 3;
+    private static final int MAX_BUCKET_NAME_LENGTH = 63;
+
 
     private static final int KB_TO_BYTES = 1024;
 
     private static final int BUCKET_SIZE = 5*1024*1024*1024;
-    private static final int DEFAULT_MAX_BUCKETS = 5;
+    private static final int DEFAULT_MAX_BUCKETS = 100;
 
     private static final int DEFAULT_LOOP_PAUSE = 5000;
 
+    private static final String DEFAULT_BUCKET_PREFIX = "scalyr-s3-benchmark-";
+
     private int bucketSize;
+    private String bucketPrefix;
     private int maxBuckets;
     private int loopPause;
     private ArrayList<BucketInfo> bucketList;
@@ -65,6 +72,7 @@ public class App
         this.maxBuckets = DEFAULT_MAX_BUCKETS;
         this.loopPause = DEFAULT_LOOP_PAUSE;
         this.bucketSize = BUCKET_SIZE;
+        this.bucketPrefix = DEFAULT_BUCKET_PREFIX;
         this.bucketList = new ArrayList<BucketInfo>();
         this.bucketList.ensureCapacity( this.maxBuckets );
         this.randomSelector = new Random( System.currentTimeMillis() );
@@ -77,11 +85,17 @@ public class App
 
     private int objectSizeFromBucketName( String name )
     {
+        int offset = 0;
+        if ( name.startsWith( this.bucketPrefix ) )
+        {
+            offset = this.bucketPrefix.length();
+        }
+
         int result = 0;
-        int index = name.indexOf( "-" );
+        int index = name.indexOf( "-", offset );
         if ( index > 0 )
         {
-            String sizeString = name.substring( 0, index );
+            String sizeString = name.substring( offset, index );
             try
             {
                 result = Integer.parseInt( sizeString );
@@ -91,7 +105,7 @@ public class App
                 System.out.println( "Invalid object size in bucket name: " + name );
             }
         }
-        return result;
+        return result * KB_TO_BYTES;
     }
 
     private int randomReadThreadCount()
@@ -100,9 +114,22 @@ public class App
         return READ_THREAD_COUNTS[index];
     }
 
-    private String uniqueBucketName( int objectSize, String text )
+    private String uniqueBucketName( int objectSize )
     {
-        return Integer.toString( objectSize ) + "-" + text + "-" + UUID.randomUUID();
+        return this.uniqueBucketName( objectSize, "" );
+    }
+
+    private String uniqueBucketName( int objectSize, String text ) throws RuntimeException
+    {
+        int sizeInKB = objectSize / KB_TO_BYTES;
+        String result = this.bucketPrefix + Integer.toString( sizeInKB ) + "-" + text + UUID.randomUUID();
+
+        if ( result.length() < MIN_BUCKET_NAME_LENGTH || result.length() > MAX_BUCKET_NAME_LENGTH )
+        {
+            throw new RuntimeException( "App.uniqueBucketName - '" + result + "' must be between 3 and 63 characters long.  Actual length is " + result.length() );
+        }
+
+        return result;
     }
 
     private void createBuckets( AmazonS3Client s3, int totalBuckets )
@@ -110,7 +137,7 @@ public class App
         for ( int i = 0; i < totalBuckets; ++i )
         {
             int objectSize = randomObjectSizeInBytes();
-            String bucketName = uniqueBucketName( objectSize, "test-" + i );
+            String bucketName = uniqueBucketName( objectSize, "" + i + "-" );
             createBucket( s3, bucketName, objectSize );
         }
     }
@@ -135,8 +162,13 @@ public class App
         writeTask.run();
     }
 
-    private void deleteBucket( AmazonS3Client s3, String bucketName )
+    private void deleteBucket( AmazonS3Client s3, String bucketName ) throws RuntimeException
     {
+        if ( !bucketName.startsWith( this.bucketPrefix ) )
+        {
+            throw new RuntimeException( "Trying to delete a bucket we probably shouldn't: " + bucketName );
+        }
+
         ArrayList<KeyVersion> keys = new ArrayList<KeyVersion>();
         ObjectListing objectListing;
 
@@ -170,12 +202,32 @@ public class App
 
     }
 
-    private void deleteAllBuckets( AmazonS3Client s3 )
+    private List<Bucket> listBuckets( AmazonS3Client s3 )
     {
         List<Bucket> list = s3.listBuckets();
+
+        ArrayList<Bucket> result = new ArrayList<Bucket>( list.size() );
         for ( Bucket b : list )
         {
-            deleteBucket( s3, b.getName() );
+            if ( b.getName().startsWith( this.bucketPrefix ) )
+            {
+                result.add( b );
+            }
+        }
+
+        return result;
+    }
+
+    private void deleteAllBuckets( AmazonS3Client s3 )
+    {
+        List<Bucket> list = listBuckets( s3 );
+        for ( Bucket b : list )
+        {
+            String name = b.getName();
+            if ( name.startsWith( this.bucketPrefix ) )
+            {
+                deleteBucket( s3, b.getName() );
+            }
         }
     }
 
@@ -199,82 +251,144 @@ public class App
         return bucketList.get( index );
     }
 
+    private void prepareRead( List<Bucket> bucketList, ArrayList<Task> tasks, TaskInfo info )
+    {
+        tasks.clear();
+
+        if ( bucketList.isEmpty() )
+        {
+            info.logger.error( "App.prepareRead - Attempting a read operation on an empty list" );
+            return;
+        }
+
+        Bucket bucket = getRandomBucket( bucketList );
+
+        int objectSize = objectSizeFromBucketName( bucket.getName() );
+
+        if ( objectSize != 0 )
+        {
+            info.bucketName = bucket.getName();
+            info.operation = "read";
+            info.objectSize = objectSize;
+
+            int totalObjects = this.bucketSize / objectSize;
+            RandomIdBuffer rid = new RandomIdBuffer( totalObjects );
+            rid.setBlockCount( info.threadCount );
+
+            for ( int i = 0; i < info.threadCount; ++i )
+            {
+                RandomObjectQueue roq = new RandomObjectQueue( rid.getBlock( i ) );
+                ReadTask readTask = new ReadTask( info, roq );
+                tasks.add( readTask );
+            }
+        }
+    }
+
+    private void prepareWrite( List<Bucket> bucketList, ArrayList<Task> tasks, TaskInfo info )
+    {
+        tasks.clear();
+
+        int objectSize = randomObjectSizeInBytes();
+        String bucketName = uniqueBucketName( objectSize );
+        Bucket bucket = info.s3.createBucket( bucketName );
+
+        if ( bucket == null )
+        {
+            info.logger.error( "App.prepareWrite - Error creating new bucket '" + bucketName + "'." );
+            return;
+        }
+
+        bucketList.add( bucket );
+
+        info.bucketName = bucketName;
+        info.operation = "write";
+        info.objectSize = objectSize;
+
+        int totalObjects = this.bucketSize / objectSize;
+
+        RandomIdBuffer rid = new RandomIdBuffer( totalObjects );
+        rid.setBlockCount( info.threadCount );
+
+        for ( int i = 0; i < info.threadCount; ++i )
+        {
+            RandomObjectQueue roq = new RandomObjectQueue( rid.getBlock( i ) );
+            WriteTask writeTask = new WriteTask( info, roq );
+            tasks.add( writeTask );
+        }
+    }
+
+    private void logSummary( List<Task> tasks, TaskInfo info, Timer timer )
+    {
+        int successfulOperations = 0;
+        int errorCount = 0;
+        for( Task t : tasks )
+        {
+            successfulOperations += t.successfulOperations();
+            errorCount += t.errorCount();
+        }
+
+        info.logger.info( "op=%sSummary threads=%d size=%d bucket=%s successfulOperations=%d errorCount=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
+                         info.operation, info.threadCount, info.objectSize, info.bucketName, successfulOperations, errorCount, timer.elapsedMilliseconds(), timer.currentThreadCpuUsedMilliseconds(), timer.processCpuUsedMilliseconds() );
+
+    }
+
+    private void performWork( ArrayList<Task> tasks, TaskInfo info, Timer timer ) throws InterruptedException
+    {
+        ArrayList<Thread> threads = new ArrayList<Thread>( info.threadCount );
+        for ( Task task : tasks )
+        {
+            Thread t = new Thread( task );
+            threads.add( t );
+        }
+
+        timer.start();
+        for ( Thread t : threads )
+        {
+            t.start();
+        }
+
+        for ( Thread t : threads )
+        {
+            t.join();
+        }
+
+        timer.stop();
+    }
+
 
     private void run()
     {
         try
         {
             AmazonS3Client s3 = createS3Client();
-            //deleteAllBuckets( s3 );
-            //createBuckets( s3, this.maxBuckets );
+
             Logger logger = LogManager.getFormatterLogger( App.class );
             TaskInfo info = new TaskInfo( logger, s3, null, null, 0, 0 );
 
             Timer timer = new Timer();
 
-            List<Bucket> list = s3.listBuckets();
+            List<Bucket> list = listBuckets( s3 );
+
+            ArrayList<Task> tasks = new ArrayList<Task>( DEFAULT_TASKS );
             //while ( true )
-            for ( int i = 0; i < 10; ++i )
+            for ( int i = 0; i < 10000; ++i )
             {
-                Bucket bucket = getRandomBucket( list );
+                info.threadCount = randomReadThreadCount();
 
-                int objectSize = objectSizeFromBucketName( bucket.getName() );
-
-                if ( objectSize != 0 )
+                Operation op = chooseOperation( list );
+                switch ( op )
                 {
-                    int threadCount = randomReadThreadCount();
-
-                    info.bucketName = bucket.getName();
-                    info.operation = "read";
-                    info.objectSize = objectSize;
-                    info.threadCount = threadCount;
-
-                    int totalObjects = this.bucketSize / objectSize;
-                    RandomIdBuffer rid = new RandomIdBuffer( totalObjects );
-                    rid.setBlockCount( threadCount );
-
-                    ArrayList<ReadTask> tasks = new ArrayList<ReadTask>( threadCount );
-                    for ( int j = 0; j < threadCount; ++j )
-                    {
-                        RandomObjectQueue roq = new RandomObjectQueue( rid.getBlock( j ) );
-                        ReadTask readTask = new ReadTask( info, roq );
-                        tasks.add( readTask );
-                    }
-
-                    ArrayList<Thread> threads = new ArrayList<Thread>( threadCount );
-                    for ( ReadTask r : tasks )
-                    {
-                        Thread t = new Thread( r );
-                        threads.add( t );
-                    }
-
-                    timer.start();
-                    for ( Thread t : threads )
-                    {
-                        t.start();
-                    }
-
-                    for ( Thread t : threads )
-                    {
-                        t.join();
-                    }
-
-                    timer.stop();
-
-                    int successfulOperations = 0;
-                    int errorCount = 0;
-                    for( ReadTask r : tasks )
-                    {
-                        successfulOperations += r.successfulOperations();
-                        errorCount += r.errorCount();
-                    }
-
-                    logger.info( "op=readSummary threads=%d size=%d bucket=%s successfulOperations=%d errorCount=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
-                                 threadCount, objectSize, info.bucketName, successfulOperations, errorCount, timer.elapsedMilliseconds(), timer.currentThreadCpuUsedMilliseconds(), timer.processCpuUsedMilliseconds() );
+                    case READ:
+                        prepareRead( list, tasks, info );
+                        break;
+                    case WRITE:
+                        prepareWrite( list, tasks, info );
+                        break;
                 }
 
+                performWork( tasks, info, timer );
 
-                
+                logSummary( tasks, info, timer );
 
                 Thread.sleep( this.loopPause );
             }
@@ -285,64 +399,14 @@ public class App
         }
     }
 
-    private Operation chooseOperation()
+    private Operation chooseOperation( List<Bucket> bucketList )
     {
         Operation result = Operation.READ;
-        if ( this.bucketList.size() < this.maxBuckets )
+        if ( bucketList.size() < this.maxBuckets )
         {
             result = Operation.WRITE;
         }
         return result;
-    }
-
-    private void prepareOperation( Operation op )
-    {
-        switch ( op )
-        {
-            case READ:
-                prepareRead();
-                break;
-            case WRITE:
-                prepareWrite();
-                break;
-        }
-    }
-
-    private BucketInfo prepareWrite()
-    {
-        BucketInfo bucket = null;
-        if ( this.bucketList.size() < this.maxBuckets )
-        {
-            bucket = new BucketInfo();
-            this.bucketList.add( bucket );
-        }
-        else
-        {
-            int index = this.randomSelector.nextInt( this.bucketList.size() );
-
-            BucketInfo oldBucket = this.bucketList.get( index );
-
-            deleteBucket( oldBucket );
-
-            bucket = new BucketInfo();
-            this.bucketList.set( index, bucket );
-        }
-
-        return bucket;
-    }
-
-    private void deleteBucket( BucketInfo bucket )
-    {
-    }
-
-
-    private void prepareRead()
-    {
-    }
-
-    private void performWork()
-    {
-        System.out.println( "Working" );
     }
 }
 

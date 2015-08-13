@@ -2,23 +2,17 @@ package com.scalyr.s3bench;
 
 import com.scalyr.s3bench.DataObject;
 import com.scalyr.s3bench.RandomObjectQueue;
+import com.scalyr.s3bench.Task;
 import com.scalyr.s3bench.TaskInfo;
 import com.scalyr.s3bench.Timer;
 
 import java.util.Random;
 
-class WriteTask
+class WriteTask extends Task
 {
-    private TaskInfo taskInfo;
-    private DataObject dataObject;
-    private RandomObjectQueue objectQueue;
-
     public WriteTask( TaskInfo taskInfo, RandomObjectQueue objectQueue )
     {
-        this.taskInfo = taskInfo;
-        this.objectQueue = objectQueue;
-
-        this.dataObject = null;
+        super( taskInfo, objectQueue );
     }
 
     public void prepare( Random random, String objectId )
@@ -29,7 +23,6 @@ class WriteTask
         }
 
         this.dataObject.fillBuffer( random, taskInfo.bucketName, objectId );
-        
     }
 
     public void run()
@@ -46,6 +39,15 @@ class WriteTask
             String error = this.dataObject.write( this.taskInfo, objectName );
 
             timer.stop();
+
+            if ( error == null )
+            {
+                ++this.successfulOperations;
+            }
+            else
+            {
+                ++this.errorCount;
+            }
 
             this.taskInfo.logResult( objectName, timer.elapsedMilliseconds(), error );
 
