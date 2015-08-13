@@ -14,6 +14,8 @@ class ReadTask implements Runnable
     private TaskInfo taskInfo;
     private RandomObjectQueue objectQueue;
     private DataObject dataObject;
+    private int successfulOperations;
+    private int errorCount;
 
     public ReadTask( TaskInfo taskInfo, RandomObjectQueue objectQueue )
     {
@@ -34,8 +36,20 @@ class ReadTask implements Runnable
         }
     }
 
+    public int successfulOperations()
+    {
+        return this.successfulOperations;
+    }
+
+    public int errorCount()
+    {
+        return this.errorCount;
+    }
+
     public void run()
     {
+        this.successfulOperations = 0;
+        this.errorCount = 0;
         Timer timer = new Timer();
         String objectName = this.objectQueue.nextObject();
         while ( objectName != null )
@@ -51,6 +65,16 @@ class ReadTask implements Runnable
             if ( error == null )
             {
                 error = this.dataObject.verifyData( this.taskInfo.bucketName, objectName );
+            }
+
+            //test again because it might have been set by the call to verifyData
+            if ( error == null )
+            {
+                ++this.successfulOperations;
+            }
+            else
+            {
+                ++this.errorCount;
             }
 
             this.taskInfo.logResult( objectName, timer.elapsedMilliseconds(), error );

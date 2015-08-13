@@ -28,7 +28,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 
-
 public class App 
 {
     enum Operation
@@ -42,7 +41,12 @@ public class App
     private static final int DEFAULT_TIMEOUT = 20000;
     private static final int MAX_CONNECTIONS = 64;
 
-    private static final int BUCKET_SIZE = 64*1024;
+    private static final int KB_TO_BYTES = 1024;
+
+    private static final int BUCKET_SIZE = 5*1024*1024*1024;
+    private static final int DEFAULT_MAX_BUCKETS = 5;
+
+    private static final int DEFAULT_LOOP_PAUSE = 5000;
 
     private int bucketSize;
     private int maxBuckets;
@@ -58,18 +62,36 @@ public class App
 
     public App()
     {
-        this.maxBuckets = 10;
-        this.loopPause = 5000;
+        this.maxBuckets = DEFAULT_MAX_BUCKETS;
+        this.loopPause = DEFAULT_LOOP_PAUSE;
         this.bucketSize = BUCKET_SIZE;
         this.bucketList = new ArrayList<BucketInfo>();
         this.bucketList.ensureCapacity( this.maxBuckets );
         this.randomSelector = new Random( System.currentTimeMillis() );
     }
-
     private int randomObjectSizeInBytes()
     {
         int index = this.randomSelector.nextInt( OBJECT_SIZES_IN_KB.length );
-        return OBJECT_SIZES_IN_KB[index];
+        return OBJECT_SIZES_IN_KB[index] * KB_TO_BYTES;
+    }
+
+    private int objectSizeFromBucketName( String name )
+    {
+        int result = 0;
+        int index = name.indexOf( "-" );
+        if ( index > 0 )
+        {
+            String sizeString = name.substring( 0, index );
+            try
+            {
+                result = Integer.parseInt( sizeString );
+            }
+            catch ( NumberFormatException e )
+            {
+                System.out.println( "Invalid object size in bucket name: " + name );
+            }
+        }
+        return result;
     }
 
     private int randomReadThreadCount()
@@ -111,25 +133,6 @@ public class App
         WriteTask writeTask = new WriteTask( info, roq );
 
         writeTask.run();
-    }
-
-    private int objectSizeFromBucketName( String name )
-    {
-        int result = 0;
-        int index = name.indexOf( "-" );
-        if ( index > 0 )
-        {
-            String sizeString = name.substring( 0, index );
-            try
-            {
-                result = Integer.parseInt( sizeString );
-            }
-            catch ( NumberFormatException e )
-            {
-                System.out.println( "Invalid object size in bucket name: " + name );
-            }
-        }
-        return result;
     }
 
     private void deleteBucket( AmazonS3Client s3, String bucketName )
@@ -176,57 +179,6 @@ public class App
         }
     }
 
-    private void loadBucketList( AmazonS3Client s3 )
-    {
-        List<Bucket> list = s3.listBuckets();
-
-        if ( list.size() < this.maxBuckets )
-        {
-            //createBuckets( s3, this.maxBuckets - list.size() );
-            list = s3.listBuckets();
-        }
-
-        System.out.println( "Bucket names:\n----------" );
-        for ( Bucket b : list )
-        {
-            System.out.println( "\tBucket: " + b.getName() );
-        }
-
-
-        test( s3 );
-
-    }
-
-    private void test( AmazonS3Client s3 )
-    {
-        String bucketName = "imron-test";
-        s3.createBucket( bucketName );
-        RandomIdBuffer rid = new RandomIdBuffer( 10 );
-
-        IntBuffer ints = rid.getBlock( 0 );
-
-        RandomObjectQueue roq = new RandomObjectQueue( ints );
-
-        Logger logger = LogManager.getFormatterLogger( "Test" );
-
-        TaskInfo info = new TaskInfo( logger, s3, bucketName, "write", 256*1024, 1 );
-
-        WriteTask writeTask = new WriteTask( info, roq );
-
-        writeTask.run();
-
-        roq = new RandomObjectQueue( rid.getBlock( 0 ) );
-        info.operation = "read";
-
-        info.logger.error( "about to create read task" );
-        ReadTask readTask = new ReadTask( info, roq );
-
-        info.logger.error( "about to run read task" );
-        readTask.run();
-
-        deleteBucket( s3, bucketName );
-    }
-
     private AmazonS3Client createS3Client()
     {
         ClientConfiguration configuration = new ClientConfiguration();
@@ -239,6 +191,12 @@ public class App
         Region usEast1 = Region.getRegion( Regions.US_EAST_1 );
         s3.setRegion( usEast1 );
         return s3;
+    }
+
+    private Bucket getRandomBucket( List<Bucket> bucketList )
+    {
+        int index = this.randomSelector.nextInt( bucketList.size() );
+        return bucketList.get( index );
     }
 
 
@@ -258,10 +216,10 @@ public class App
             //while ( true )
             for ( int i = 0; i < 10; ++i )
             {
-                int index = this.randomSelector.nextInt( list.size() );
-                Bucket bucket = list.get( index );
+                Bucket bucket = getRandomBucket( list );
 
                 int objectSize = objectSizeFromBucketName( bucket.getName() );
+
                 if ( objectSize != 0 )
                 {
                     int threadCount = randomReadThreadCount();
@@ -302,8 +260,17 @@ public class App
                     }
 
                     timer.stop();
-                    logger.info( "op=readSummary threads=%d size=%d bucket=%s elapsedTimeMs=%d cpuUsedMs=%d",
-                                 threadCount, objectSize, info.bucketName, timer.elapsedMilliseconds(), timer.cpuUsedMilliseconds() );
+
+                    int successfulOperations = 0;
+                    int errorCount = 0;
+                    for( ReadTask r : tasks )
+                    {
+                        successfulOperations += r.successfulOperations();
+                        errorCount += r.errorCount();
+                    }
+
+                    logger.info( "op=readSummary threads=%d size=%d bucket=%s successfulOperations=%d errorCount=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
+                                 threadCount, objectSize, info.bucketName, successfulOperations, errorCount, timer.elapsedMilliseconds(), timer.currentThreadCpuUsedMilliseconds(), timer.processCpuUsedMilliseconds() );
                 }
 
 
