@@ -30,8 +30,7 @@ class ReadTask extends Task
 
     public void run()
     {
-        this.successfulOperations = 0;
-        this.errorCount = 0;
+        reset();
         Timer timer = new Timer();
         String objectName = this.objectQueue.nextObject();
         while ( objectName != null )
@@ -59,7 +58,9 @@ class ReadTask extends Task
                 ++this.errorCount;
             }
 
-            this.taskInfo.logResult( objectName, timer.elapsedMilliseconds(), error );
+            long elapsed = timer.elapsedMilliseconds();
+            this.taskInfo.logResult( objectName, elapsed, error );
+            operationComplete( elapsed );
 
             objectName = this.objectQueue.nextObject();
 

@@ -4,13 +4,22 @@
   <groupId>com.scalyr.s3bench</groupId>
   <artifactId>s3bench</artifactId>
   <packaging>jar</packaging>
-  <version>1.0-SNAPSHOT</version>
+  <version>1.0.1-SNAPSHOT</version>
   <name>s3bench</name>
   <url>http://www.scalyr.com/</url>
   <properties>
       <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
       <logConfig>""</logConfig>
+      <programArguments>""</programArguments>
   </properties>
+
+  <repositories>
+    <repository>
+      <id>in-project</id>
+      <name>In Project Repo</name>
+      <url>file://${project.basedir}/lib</url>
+    </repository>
+  </repositories>
 
   <dependencies>
     <dependency>
@@ -21,7 +30,7 @@
     </dependency>
     <dependency>
       <groupId>com.amazonaws</groupId>
-      <artifactId>aws-java-sdk</artifactId>
+      <artifactId>aws-java-sdk-s3</artifactId>
       <version>1.10.10</version>
     </dependency>
     <dependency>
@@ -39,6 +48,11 @@
       <artifactId>log4j-core</artifactId>
       <version>2.3</version>
     </dependency>
+    <dependency>
+      <groupId>com.scalyr</groupId>
+      <artifactId>scalyr-api</artifactId>
+      <version>1.0.0</version>
+    </dependency>
   </dependencies>
 
   <build>
@@ -47,20 +61,23 @@
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>1.4.0</version>
-        <!-- executions>
+        <executions>
           <execution>
             <goals>
               <goal>exec</goal>
             </goals>
           </execution>
-        </executions -->
+        </executions>
         <configuration>
           <executable>java</executable>
           <arguments>
             <argument>-classpath</argument>
             <classpath />
             <argument>-Dlog4j.configurationFile=${logConfig}</argument>
+            <argument>-Xms60g</argument>
+            <argument>-Xmx63g</argument>
             <argument>com.scalyr.s3bench.App</argument>
+            <argument>${programArguments}</argument>
           </arguments>
         </configuration>
       </plugin>

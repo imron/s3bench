@@ -27,6 +27,7 @@ class WriteTask extends Task
 
     public void run()
     {
+        reset();
         Random random = new Random();
         Timer timer = new Timer();
         String objectName = this.objectQueue.nextObject();
@@ -49,7 +50,9 @@ class WriteTask extends Task
                 ++this.errorCount;
             }
 
-            this.taskInfo.logResult( objectName, timer.elapsedMilliseconds(), error );
+            long elapsed = timer.elapsedMilliseconds();
+            this.taskInfo.logResult( objectName, elapsed, error );
+            operationComplete( elapsed );
 
             objectName = this.objectQueue.nextObject();
         }
