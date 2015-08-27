@@ -52,10 +52,12 @@ public class App
     private static final String DEFAULT_PROPERTY_FILE = "s3bench.properties";
 
     private static final int[] OBJECT_SIZES_IN_KB = { 256, 1024, 4096, 16384 };
-    private static final int[] READ_THREAD_COUNTS = { 1, 2, 4, 8, 16, 32, 64 };
+    private static final int[] READ_THREAD_COUNTS = { 1, 2, 4, 8, 16, 32, 64, 128 };
     private static final int[] WRITE_THREAD_COUNTS = { 1, 2, 4, 8 };
 
     private static final int DEFAULT_TASKS = 64;
+
+    private static final int LARGE_THREAD_THRESHOLD = 1024*1024;
 
     private static final int MIN_BUCKET_NAME_LENGTH = 3;
     private static final int MAX_BUCKET_NAME_LENGTH = 63;
@@ -283,9 +285,14 @@ public class App
         return result * KB_TO_BYTES;
     }
 
-    private int randomReadThreadCount()
+    private int randomReadThreadCount( int objectSize )
     {
-        int index = this.randomSelector.nextInt( READ_THREAD_COUNTS.length );
+        int maxOffset = READ_THREAD_COUNTS.length;
+        if ( objectSize > LARGE_THREAD_THRESHOLD && maxOffset > 0 )
+        {
+            --maxOffset;
+        }
+        int index = this.randomSelector.nextInt( maxOffset );
         return READ_THREAD_COUNTS[index];
     }
 
@@ -419,7 +426,7 @@ public class App
 
         if ( objectSize != 0 )
         {
-            info.threadCount = randomReadThreadCount();
+            info.threadCount = randomReadThreadCount( objectSize );
             info.bucketName = bucket.getName();
             info.operation = "read";
             info.objectSize = objectSize;
