@@ -17,12 +17,15 @@ import com.scalyr.api.logs.*;
 import com.scalyr.s3bench.BucketInfo;
 import com.scalyr.s3bench.RandomIdBuffer;
 import com.scalyr.s3bench.RandomObjectQueue;
+import com.scalyr.s3bench.Stats;
+import com.scalyr.s3bench.StatsAccumulator;
 import com.scalyr.s3bench.Timer;
 
 import java.io.FileInputStream;
 import java.nio.IntBuffer;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Properties;
 import java.util.Random;
@@ -30,6 +33,8 @@ import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import org.apache.commons.lang3.text.WordUtils;
 
 
 public class App 
@@ -40,7 +45,7 @@ public class App
         WRITE
     }
 
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
 
     private static final int SCALYR_BUFFER_RAM = 4*1024*1024;
 
@@ -74,6 +79,9 @@ public class App
     private static final String FREE_MEMORY_THRESHOLD_KEY = "freeMemoryThreshold";
     private static final long DEFAULT_FREE_MEMORY_THRESHOLD = 5*1024*1024*1024;
 
+    private static final String SERVER_HOST_KEY = "serverHost";
+    private static final String DEFAULT_SERVER_HOST = null;
+
     private static final String BUCKET_PREFIX_KEY = "bucketPrefix";
     private static final String DEFAULT_BUCKET_PREFIX = "scalyr-s3-benchmark-";
 
@@ -92,6 +100,7 @@ public class App
 
     private long bucketSize;
     private String bucketPrefix;
+    private String serverHost;
     private int maxBuckets;
     private int loopDelay;
     private int loopIterations;
@@ -104,6 +113,8 @@ public class App
 
     private ArrayList<BucketInfo> bucketList;
     private Random randomSelector;
+
+    private HashMap<String, StatsAccumulator> accumulators;
 
     public static void main( String[] args )
     {
@@ -123,7 +134,12 @@ public class App
 
     public void initScalyr()
     {
-        Events.init("0Le5BQxEFBZ_od5cA0biuP2lWhIeXIZcNGn4hvB5ftak-", SCALYR_BUFFER_RAM );
+        EventAttributes attributes = null;
+        if ( this.serverHost != null )
+        {
+            attributes = new EventAttributes( "serverHost", this.serverHost );
+        }
+        Events.init("0Le5BQxEFBZ_od5cA0biuP2lWhIeXIZcNGn4hvB5ftak-", SCALYR_BUFFER_RAM, null, attributes );
         StatReporter.registerAll();
     }
 
@@ -136,6 +152,8 @@ public class App
         this.bucketPrefix = DEFAULT_BUCKET_PREFIX;
         this.freeMemoryThreshold = DEFAULT_FREE_MEMORY_THRESHOLD;
 
+        this.serverHost = DEFAULT_SERVER_HOST;
+
         this.awsEndpoint = DEFAULT_AWS_ENDPOINT;
         this.awsMaxConnections = DEFAULT_AWS_MAX_CONNECTIONS;
         this.awsConnectionTimeout = DEFAULT_AWS_CONNECTION_TIMEOUT;
@@ -146,6 +164,10 @@ public class App
         this.bucketList = new ArrayList<BucketInfo>();
         this.bucketList.ensureCapacity( this.maxBuckets );
         this.randomSelector = new Random( System.currentTimeMillis() );
+
+        int totalReadKeys = READ_THREAD_COUNTS.length * OBJECT_SIZES_IN_KB.length;
+        int totalWriteKeys = WRITE_THREAD_COUNTS.length * OBJECT_SIZES_IN_KB.length;
+        this.accumulators = new HashMap<String, StatsAccumulator>( (totalReadKeys + totalWriteKeys) * 2 );
     }
 
     int loadInt( Properties properties, String key, int defaultValue )
@@ -215,6 +237,7 @@ public class App
                 this.freeMemoryThreshold = loadLong( properties, FREE_MEMORY_THRESHOLD_KEY, DEFAULT_FREE_MEMORY_THRESHOLD );
 
                 this.bucketPrefix = properties.getProperty( BUCKET_PREFIX_KEY, DEFAULT_BUCKET_PREFIX );
+                this.serverHost = properties.getProperty( SERVER_HOST_KEY, DEFAULT_SERVER_HOST );
 
                 this.awsEndpoint = properties.getProperty( AWS_ENDPOINT_KEY, DEFAULT_AWS_ENDPOINT );
                 this.awsMaxConnections = loadInt( properties, AWS_MAX_CONNECTIONS_KEY, DEFAULT_AWS_MAX_CONNECTIONS );
@@ -448,28 +471,24 @@ public class App
         }
     }
 
-    private void logSummary( List<Task> tasks, TaskInfo info, Timer timer )
+    private double bytesAndMillisecondsToMbPerSecond( long bytes, long milliseconds )
     {
-        int successfulOperations = 0;
-        int errorCount = 0;
-        long fastest = Long.MAX_VALUE;
-        long slowest = Long.MIN_VALUE;
-        for( Task t : tasks )
-        {
-            successfulOperations += t.successfulOperations();
-            errorCount += t.errorCount();
-            fastest = Math.min( t.fastestOperation(), fastest );
-            slowest = Math.max( t.slowestOperation(), slowest );
-        }
+        double elapsedSeconds = milliseconds * MILLIS_TO_SECONDS;
+        double mbRead = (double)bytes / MB_TO_BYTES;
+        return mbRead / elapsedSeconds;
+    }
 
-        long elapsedMilliseconds = timer.elapsedMilliseconds();
-        double elapsedSeconds = elapsedMilliseconds * MILLIS_TO_SECONDS;
-        double mbRead = (double)info.objectSize / MB_TO_BYTES * successfulOperations;
-        double mbPerSecond = mbRead / elapsedSeconds;
+    private void logSummary( Logger logger, Stats stats, StatsAccumulator accumulator )
+    {
+        double mbPerSecond = bytesAndMillisecondsToMbPerSecond( stats.bytesRead, stats.elapsedMilliseconds );
 
-        info.logger.info( "op=%sSummary version=%d threads=%d size=%d mbPerSecond=%f bucket=%s successfulOperations=%d errorCount=%d fastestOperation=%d slowestOperation=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
-                         info.operation, info.version, info.threadCount, info.objectSize, mbPerSecond, info.bucketName, successfulOperations, errorCount, fastest, slowest, elapsedMilliseconds, timer.currentThreadCpuUsedMilliseconds(), timer.processCpuUsedMilliseconds() );
+        logger.info( "op=%sSummary version=%d threads=%d size=%d mbPerSecond=%f bucket=%s successfulOperations=%d errorCount=%d fastestOperation=%d slowestOperation=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
+                         stats.operation, stats.version, stats.threadCount, stats.objectSize, mbPerSecond, stats.bucketName, stats.successfulOperations, stats.errorCount, stats.fastestOperation, stats.slowestOperation, stats.elapsedMilliseconds, stats.currentThreadCpuUsedMilliseconds, stats.processCpuUsedMilliseconds );
 
+        mbPerSecond = bytesAndMillisecondsToMbPerSecond( accumulator.bytesRead, accumulator.elapsedMilliseconds );
+
+        logger.info( "op=cumulative%sSummary version=%d threads=%d size=%d mbPerSecond=%f successfulOperations=%d errorCount=%d fastestOperation=%d slowestOperation=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
+                         WordUtils.capitalize( accumulator.operation ), accumulator.version, accumulator.threadCount, accumulator.objectSize, mbPerSecond, accumulator.successfulOperations, accumulator.errorCount, accumulator.fastestOperation, accumulator.slowestOperation, accumulator.elapsedMilliseconds, accumulator.currentThreadCpuUsedMilliseconds, accumulator.processCpuUsedMilliseconds );
     }
 
     private void performWork( ArrayList<Task> tasks, TaskInfo info, Timer timer ) throws InterruptedException
@@ -515,6 +534,17 @@ public class App
 
     }
 
+    private StatsAccumulator getAccumulator( String key )
+    {
+        StatsAccumulator result = this.accumulators.get( key );
+        if ( result == null )
+        {
+            result = new StatsAccumulator();
+            this.accumulators.put( key, result );
+        }
+        return result;
+    }
+
 
     private void run()
     {
@@ -527,6 +557,7 @@ public class App
             Logger logger = LogManager.getFormatterLogger( App.class );
             TaskInfo info = new TaskInfo( logger, s3, null, null, 0, 0, VERSION );
 
+            StatsAccumulator dummyAccumulator = new StatsAccumulator();
             Timer timer = new Timer();
 
             List<Bucket> list = listBuckets( s3 );
@@ -548,7 +579,11 @@ public class App
 
                 performWork( tasks, info, timer );
 
-                logSummary( tasks, info, timer );
+                Stats stats = new Stats( tasks, info, timer );
+                StatsAccumulator accumulator = getAccumulator( stats.key() );
+                accumulator.accumulate( stats );
+
+                logSummary( info.logger, stats, accumulator );
 
                 tasks.clear();
 
