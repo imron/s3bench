@@ -45,13 +45,17 @@ public class App
         WRITE
     }
 
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
 
     private static final int SCALYR_BUFFER_RAM = 4*1024*1024;
 
+    private static final int ONE_MB = 1024*1024;
+
     private static final String DEFAULT_PROPERTY_FILE = "s3bench.properties";
 
+    private static final int PARTIAL_READ_SIZE = 256*1024;
     private static final int[] OBJECT_SIZES_IN_KB = { 256, 1024, 4096, 16384 };
+
     private static final int[] READ_THREAD_COUNTS = { 1, 2, 4, 8, 16, 32, 64, 128 };
     private static final int[] WRITE_THREAD_COUNTS = { 1, 2, 4, 8 };
 
@@ -302,6 +306,11 @@ public class App
         return WRITE_THREAD_COUNTS[index];
     }
 
+    private boolean randomBoolean( float weight )
+    {
+        return this.randomSelector.nextFloat() < weight;
+    }
+
     private String uniqueBucketName( int objectSize )
     {
         return this.uniqueBucketName( objectSize, "" );
@@ -404,6 +413,24 @@ public class App
         return s3;
     }
 
+    private Bucket getRandomBucketOfSize( List<Bucket> bucketList, int size )
+    {
+        Bucket bucket = null;
+        int MAX_ITERATIONS = 100;
+        int count = 0;
+        while ( bucket == null && count < MAX_ITERATIONS )
+        {
+            bucket = getRandomBucket( bucketList );
+            int objectSize = objectSizeFromBucketName( bucket.getName() );
+            if ( objectSize != size )
+            {
+                bucket = null;
+            }
+            ++count;
+        }
+        return bucket;
+    }
+
     private Bucket getRandomBucket( List<Bucket> bucketList )
     {
         int index = this.randomSelector.nextInt( bucketList.size() );
@@ -421,6 +448,11 @@ public class App
         }
 
         Bucket bucket = getRandomBucket( bucketList );
+        if ( bucket == null )
+        {
+            info.logger.error( "App.prepareRead - Failed to get bucket" );
+            return;
+        }
 
         int objectSize = objectSizeFromBucketName( bucket.getName() );
 
@@ -428,18 +460,31 @@ public class App
         {
             info.threadCount = randomReadThreadCount( objectSize );
             info.bucketName = bucket.getName();
-            info.operation = "read";
             info.objectSize = objectSize;
+            info.partialSize = objectSize;
+            info.operation = "read";
+
+            boolean partialRead = false;
+            if ( objectSize == ONE_MB )
+            {
+                partialRead = randomBoolean( 10.05f );
+            }
 
             int totalObjects = (int)(this.bucketSize / objectSize);
             RandomIdBuffer rid = new RandomIdBuffer( totalObjects );
             rid.setBlockCount( info.threadCount );
 
+            if ( partialRead )
+            {
+                info.operation = "partialRead";
+                info.partialSize = PARTIAL_READ_SIZE;
+            }
+
             for ( int i = 0; i < info.threadCount; ++i )
             {
                 RandomObjectQueue roq = new RandomObjectQueue( rid.getBlock( i ) );
-                ReadTask readTask = new ReadTask( info, roq );
-                tasks.add( readTask );
+                ReadTask task = new ReadTask( info, roq );
+                tasks.add( task );
             }
         }
     }
@@ -489,13 +534,13 @@ public class App
     {
         double mbPerSecond = bytesAndMillisecondsToMbPerSecond( stats.bytesRead, stats.elapsedMilliseconds );
 
-        logger.info( "op=%sSummary version=%d threads=%d size=%d mbPerSecond=%f bucket=%s successfulOperations=%d errorCount=%d fastestOperation=%d slowestOperation=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
-                         stats.operation, stats.version, stats.threadCount, stats.objectSize, mbPerSecond, stats.bucketName, stats.successfulOperations, stats.errorCount, stats.fastestOperation, stats.slowestOperation, stats.elapsedMilliseconds, stats.currentThreadCpuUsedMilliseconds, stats.processCpuUsedMilliseconds );
+        logger.info( "op=%sSummary version=%d threads=%d size=%d objectSize=%d mbPerSecond=%f bucket=%s successfulOperations=%d errorCount=%d fastestOperation=%d slowestOperation=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
+                         stats.operation, stats.version, stats.threadCount, stats.partialSize, stats.objectSize, mbPerSecond, stats.bucketName, stats.successfulOperations, stats.errorCount, stats.fastestOperation, stats.slowestOperation, stats.elapsedMilliseconds, stats.currentThreadCpuUsedMilliseconds, stats.processCpuUsedMilliseconds );
 
         mbPerSecond = bytesAndMillisecondsToMbPerSecond( accumulator.bytesRead, accumulator.elapsedMilliseconds );
 
-        logger.info( "op=cumulative%sSummary version=%d threads=%d size=%d mbPerSecond=%f successfulOperations=%d errorCount=%d fastestOperation=%d slowestOperation=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
-                         WordUtils.capitalize( accumulator.operation ), accumulator.version, accumulator.threadCount, accumulator.objectSize, mbPerSecond, accumulator.successfulOperations, accumulator.errorCount, accumulator.fastestOperation, accumulator.slowestOperation, accumulator.elapsedMilliseconds, accumulator.currentThreadCpuUsedMilliseconds, accumulator.processCpuUsedMilliseconds );
+        logger.info( "op=cumulative%sSummary version=%d threads=%d size=%d objectSize=%d mbPerSecond=%f successfulOperations=%d errorCount=%d fastestOperation=%d slowestOperation=%d elapsedTimeMs=%d currentThreadCpuUsedMs=%f processCpuUsedMs=%f",
+                         WordUtils.capitalize( accumulator.operation ), accumulator.version, accumulator.threadCount, accumulator.partialSize, accumulator.objectSize, mbPerSecond, accumulator.successfulOperations, accumulator.errorCount, accumulator.fastestOperation, accumulator.slowestOperation, accumulator.elapsedMilliseconds, accumulator.currentThreadCpuUsedMilliseconds, accumulator.processCpuUsedMilliseconds );
     }
 
     private void performWork( ArrayList<Task> tasks, TaskInfo info, Timer timer ) throws InterruptedException

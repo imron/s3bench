@@ -2,9 +2,10 @@ package com.scalyr.s3bench;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
+import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
-import com.amazonaws.services.s3.model.ObjectMetadata;
 
 import com.scalyr.s3bench.TaskInfo;
 
@@ -102,13 +103,35 @@ class DataObject
         return result;
     }
 
+    private long[] getRange( TaskInfo taskInfo )
+    {
+        long[] result = null;
+
+        if ( taskInfo.partialSize < taskInfo.objectSize )
+        {
+            result = new long[2];
+            Random random = new Random();
+            result[0] = random.nextInt( taskInfo.objectSize - taskInfo.partialSize );
+            result[1] = result[0] + taskInfo.partialSize - 1;
+        }
+
+        return result;
+    }
 
     public String read( TaskInfo taskInfo, String objectId )
     {
         String result = null;
         try
         {
-            S3Object object = taskInfo.s3.getObject( taskInfo.bucketName, objectId );
+            long[] range = getRange( taskInfo );
+            GetObjectRequest request = new GetObjectRequest( taskInfo.bucketName, objectId );
+
+            if ( range != null )
+            {
+                request.setRange( range[0], range[1] );
+            }
+
+            S3Object object = taskInfo.s3.getObject( request );
             ObjectMetadata metadata = object.getObjectMetadata();
 
             long contentLength = metadata.getContentLength();

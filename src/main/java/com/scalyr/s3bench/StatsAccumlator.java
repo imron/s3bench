@@ -18,6 +18,7 @@ class StatsAccumulator
     public int version;
     public int threadCount;
     public int objectSize;
+    public int partialSize;
 
     public StatsAccumulator()
     {
@@ -33,6 +34,7 @@ class StatsAccumulator
         this.version = 0;
         this.threadCount = 0;
         this.objectSize = 0;
+        this.partialSize = 0;
         this.key = null;
     }
 
@@ -46,6 +48,7 @@ class StatsAccumulator
             this.version = stats.version;
             this.threadCount = stats.threadCount;
             this.objectSize = stats.objectSize;
+            this.partialSize = stats.partialSize;
         }
 
         if ( this.key.equals( statsKey ) )

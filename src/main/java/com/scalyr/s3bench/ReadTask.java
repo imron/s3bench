@@ -18,9 +18,9 @@ class ReadTask extends Task
 
     public void prepare()
     {
-        if ( this.dataObject == null || this.dataObject.size() != taskInfo.objectSize )
+        if ( this.dataObject == null || this.dataObject.size() != taskInfo.partialSize )
         {
-            this.dataObject = new DataObject( taskInfo.objectSize );
+            this.dataObject = new DataObject( taskInfo.partialSize );
         }
         else
         {
@@ -43,7 +43,7 @@ class ReadTask extends Task
 
             timer.stop();
 
-            if ( error == null )
+            if ( error == null && this.taskInfo.partialSize == this.taskInfo.objectSize )
             {
                 error = this.dataObject.verifyData( this.taskInfo.bucketName, objectName );
             }

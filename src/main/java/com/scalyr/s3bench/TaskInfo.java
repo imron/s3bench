@@ -12,6 +12,7 @@ class TaskInfo
     public String bucketName;
     public String operation;
     public int objectSize;
+    public int partialSize;
     public int threadCount;
     public int version;
 
@@ -22,6 +23,7 @@ class TaskInfo
         this.bucketName = bucketName;
         this.operation = operation;
         this.objectSize = objectSize;
+        this.partialSize = objectSize;
         this.threadCount = threadCount;
         this.version = version;
     }
@@ -30,13 +32,13 @@ class TaskInfo
     {
         if ( errorMessage == null )
         {
-            this.logger.error( "op=%s version=%d threads=%d size=%d bucket=%s objectId=%s timeMs=%d",
-                this.operation, this.version, this.threadCount, this.objectSize, this.bucketName, objectId, millisecondsElapsed );
+            this.logger.error( "op=%s version=%d threads=%d size=%d objectSize=%d bucket=%s objectId=%s timeMs=%d",
+                this.operation, this.version, this.threadCount, this.partialSize, this.objectSize, this.bucketName, objectId, millisecondsElapsed );
         }
         else
         {
-            this.logger.error( "op=%s version=%d threads=%d size=%d bucket=%s objectId=%s timeMs=%d error=[%s]",
-                this.operation, this.version, this.threadCount, this.objectSize, this.bucketName, objectId, millisecondsElapsed, errorMessage );
+            this.logger.error( "op=%s version=%d threads=%d size=%d objectSize=%d bucket=%s objectId=%s timeMs=%d error=[%s]",
+                this.operation, this.version, this.threadCount, this.partialSize, this.objectSize, this.bucketName, objectId, millisecondsElapsed, errorMessage );
         }
     }
 
