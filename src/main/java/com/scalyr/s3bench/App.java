@@ -509,6 +509,7 @@ public class App
         info.bucketName = bucketName;
         info.operation = "write";
         info.objectSize = objectSize;
+        info.partialSize = objectSize;
 
         int totalObjects = (int)(this.bucketSize / objectSize);
 
