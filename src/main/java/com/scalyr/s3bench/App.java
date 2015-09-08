@@ -74,7 +74,7 @@ public class App
     private static final long DEFAULT_BUCKET_SIZE = 5L*1024*1024*1024;
 
     private static final String MAX_BUCKETS_KEY = "maxBuckets";
-    private static final int DEFAULT_MAX_BUCKETS = 200;
+    private static final int DEFAULT_MAX_BUCKETS = 400;
 
     private static final String LOOP_DELAY_KEY = "loopDelay";
     private static final int DEFAULT_LOOP_DELAY = 5000;
