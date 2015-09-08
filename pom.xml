@@ -4,7 +4,7 @@
   <groupId>com.scalyr.s3bench</groupId>
   <artifactId>s3bench</artifactId>
   <packaging>jar</packaging>
-  <version>1.0.3-SNAPSHOT</version>
+  <version>1.0.3</version>
   <name>s3bench</name>
   <url>http://www.scalyr.com/</url>
   <properties>
@@ -79,8 +79,8 @@
             <argument>-classpath</argument>
             <classpath />
             <argument>-Dlog4j.configurationFile=${logConfig}</argument>
-            <argument>-Xms60g</argument>
-            <argument>-Xmx63g</argument>
+            <!--argument>-Xms60m</argument>
+            <argument>-Xmx63m</argument-->
             <argument>com.scalyr.s3bench.App</argument>
             <argument>${programArguments}</argument>
           </arguments>
