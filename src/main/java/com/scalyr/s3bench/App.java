@@ -135,7 +135,15 @@ public class App
         }
 
         App app = new App( propertyFile );
-        app.run();
+        try
+        {
+            app.run();
+        }
+        catch ( Exception e )
+        {
+            System.out.println( "Unexpected exception - application will exit.  " + e.getMessage() );
+            throw e;
+        }
     }
 
     public void initScalyr()
