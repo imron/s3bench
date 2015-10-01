@@ -122,7 +122,7 @@ public class App
 
     private HashMap<String, StatsAccumulator> accumulators;
 
-    public static void main( String[] args )
+    public static void main( String[] args ) throws Exception
     {
         String propertyFile = DEFAULT_PROPERTY_FILE;
         if ( args.length == 1 )
