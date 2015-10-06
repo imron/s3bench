@@ -45,18 +45,26 @@ public class App
         WRITE
     }
 
-    private static final int VERSION = 3;
+    private static final int VERSION = 4;
 
     private static final int SCALYR_BUFFER_RAM = 4*1024*1024;
 
+    private static final int MAX_BUCKET_TRIES = 100;
     private static final int ONE_MB = 1024*1024;
+    private static final int FOUR_MB = 4*ONE_MB;
+    private static final int SIXTEEN_MB = 16*ONE_MB;
 
     private static final String DEFAULT_PROPERTY_FILE = "s3bench.properties";
 
     private static final int PARTIAL_READ_SIZE = 256*1024;
     private static final int[] OBJECT_SIZES_IN_KB = { 256, 1024, 4096, 16384 };
 
+
+    private static final int[] OBJECT_SIZES = { ONE_MB, FOUR_MB, SIXTEEN_MB };
     private static final int[] READ_THREAD_COUNTS = { 1, 2, 4, 8, 16, 32, 64, 128 };
+    private static final int[] READ_THREAD_COUNTS_1MB = { 16, 32, 64 };
+    private static final int[] READ_THREAD_COUNTS_4MB = { 4, 8, 16, 32 };
+    private static final int[] READ_THREAD_COUNTS_16MB = { 4, 8, 16, 32 };
     private static final int[] WRITE_THREAD_COUNTS = { 1, 2, 4, 8 };
 
     private static final int DEFAULT_TASKS = 64;
@@ -299,13 +307,23 @@ public class App
 
     private int randomReadThreadCount( int objectSize )
     {
-        int maxOffset = READ_THREAD_COUNTS.length;
-        if ( objectSize > LARGE_THREAD_THRESHOLD && maxOffset > 0 )
+        int[] threadCounts = READ_THREAD_COUNTS;
+
+        switch ( objectSize )
         {
-            --maxOffset;
+            case ONE_MB:
+                threadCounts = READ_THREAD_COUNTS_1MB;
+                break;
+            case FOUR_MB:
+                threadCounts = READ_THREAD_COUNTS_4MB;
+                break;
+            case SIXTEEN_MB:
+                threadCounts = READ_THREAD_COUNTS_16MB;
+                break;
         }
+        int maxOffset = threadCounts.length;
         int index = this.randomSelector.nextInt( maxOffset );
-        return READ_THREAD_COUNTS[index];
+        return threadCounts[index];
     }
 
     private int randomWriteThreadCount()
@@ -455,14 +473,30 @@ public class App
             return;
         }
 
-        Bucket bucket = getRandomBucket( bucketList );
+        Bucket bucket = null;
+
+        int count = 0;
+        int objectSize = 0;
+        while ( bucket == null && count < MAX_BUCKET_TRIES )
+        {
+            Bucket nextBucket = getRandomBucket( bucketList );
+            objectSize = objectSizeFromBucketName( nextBucket.getName() );
+            for ( int size : OBJECT_SIZES )
+            {
+                if ( size == objectSize )
+                {
+                    bucket = nextBucket;
+                    break;
+                }
+            }
+            ++count;
+        }
+
         if ( bucket == null )
         {
             info.logger.error( "App.prepareRead - Failed to get bucket" );
             return;
         }
-
-        int objectSize = objectSizeFromBucketName( bucket.getName() );
 
         if ( objectSize != 0 )
         {
@@ -475,7 +509,9 @@ public class App
             boolean partialRead = false;
             if ( objectSize == ONE_MB )
             {
-                partialRead = randomBoolean( 10.05f );
+                // Commenting out the following line to ensure that
+                // partial reads are always false
+                //partialRead = randomBoolean( 0.5f );
             }
 
             int totalObjects = (int)(this.bucketSize / objectSize);
