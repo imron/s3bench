@@ -17,8 +17,8 @@ class StatsAccumulator
     public String operation;
     public int version;
     public int threadCount;
-    public int objectSize;
-    public int partialSize;
+    public long objectSize;
+    public long partialSize;
 
     public StatsAccumulator()
     {

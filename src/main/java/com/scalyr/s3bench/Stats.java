@@ -21,8 +21,8 @@ class Stats
     public int version;
     public String bucketName;
     public int threadCount;
-    public int objectSize;
-    public int partialSize;
+    public long objectSize;
+    public long partialSize;
 
     public Stats( List<Task> tasks, TaskInfo info, Timer timer )
     {
@@ -50,7 +50,7 @@ class Stats
             this.slowestOperation = Math.max( t.slowestOperation(), this.slowestOperation );
         }
 
-        this.bytesRead = info.partialSize * this.successfulOperations;
+        this.bytesRead = this.partialSize * this.successfulOperations;
 
     }
 
