@@ -4,7 +4,7 @@
   <groupId>com.scalyr.s3bench</groupId>
   <artifactId>s3bench</artifactId>
   <packaging>jar</packaging>
-  <version>1.0.4</version>
+  <version>1.0.5</version>
   <name>s3bench</name>
   <url>http://www.scalyr.com/</url>
   <properties>

@@ -45,7 +45,7 @@ public class App
         WRITE
     }
 
-    private static final int VERSION = 4;
+    private static final int VERSION = 5;
 
     private static final int SCALYR_BUFFER_RAM = 4*1024*1024;
 
