@@ -1,2 +1,7 @@
 *.swp
 /target
+lib
+out.dat
+scalyr-api-1.0.0.jar
+scalyrApi.jar
+tags

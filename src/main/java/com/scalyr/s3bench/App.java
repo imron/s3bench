@@ -45,7 +45,7 @@ public class App
         WRITE
     }
 
-    private static final int VERSION = 5;
+    private static final int VERSION = 6;
 
     private static final int SCALYR_BUFFER_RAM = 4*1024*1024;
 
@@ -192,7 +192,7 @@ public class App
         this.awsConnectionTimeout = DEFAULT_AWS_CONNECTION_TIMEOUT;
         this.awsSocketTimeout = DEFAULT_AWS_SOCKET_TIMEOUT;
 
-        this.sizesAndThreads = DEFAULT_SIZES_AND_THREADS;
+        this.sizesAndThreads = DEFAULT_SIZE_AND_THREAD_LIST;
 
         loadProperties( properties );
 
@@ -279,7 +279,7 @@ public class App
                 this.awsConnectionTimeout = loadInt( properties, AWS_CONNECTION_TIMEOUT_KEY, DEFAULT_AWS_CONNECTION_TIMEOUT );
                 this.awsSocketTimeout = loadInt( properties, AWS_SOCKET_TIMEOUT_KEY, DEFAULT_AWS_SOCKET_TIMEOUT );
 
-                this.sizesAndThreads = properties.getProperty( SIZES_AND_THREADS_KEY, DEFAULT_SIZES_AND_THREADS );
+                this.sizesAndThreads = properties.getProperty( SIZE_AND_THREAD_LIST_KEY, DEFAULT_SIZE_AND_THREAD_LIST );
             }
             catch( Exception e )
             {
@@ -496,7 +496,7 @@ public class App
         boolean useSizesAndThreadsConfig = sizesAndThreads != null && sizesAndThreads.length() > 0;
         if (useSizesAndThreadsConfig) {
           String[] split = sizesAndThreads.split(",");
-          String config = split[this.randomSelector.nextInt(ss.length)];
+          String config = split[this.randomSelector.nextInt(split.length)];
           split = config.trim().split(":");
           objectSize = parseObjectSize(split[0]);
           threadCount = Integer.parseInt(split[1]);
@@ -576,7 +576,7 @@ public class App
             return number * 1024;
         if (lastChar == 'm')
             return number * 1024 * 1024;
-        throw new RuntimeException("Can't parse size specifier [" + objectSize + "]);
+        throw new RuntimeException("Can't parse size specifier [" + objectSize + "]");
     }
 
     private void prepareWrite( List<Bucket> bucketList, ArrayList<Task> tasks, TaskInfo info )
