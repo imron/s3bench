@@ -111,6 +111,9 @@ public class App
     private static final String AWS_SOCKET_TIMEOUT_KEY = "aws.socketTimeout";
     private static final int DEFAULT_AWS_SOCKET_TIMEOUT = 20000;
 
+    private static final String SIZE_AND_THREAD_LIST_KEY = "sizesAndThreads";
+    private static final String DEFAULT_SIZE_AND_THREAD_LIST = "";
+
 
     private long bucketSize;
     private String bucketPrefix;
@@ -124,6 +127,14 @@ public class App
     private int awsMaxConnections;
     private int awsConnectionTimeout;
     private int awsSocketTimeout;
+
+    /**
+     * If nonempty, contains a comma-delimited list of object size / thread count pairs, specifying
+     * the configurations to test. Example:
+     *
+     *   256K:1,1K:1,4M:4,16M:16
+     */
+    private String sizesAndThreads;
 
     private ArrayList<BucketInfo> bucketList;
     private Random randomSelector;
@@ -180,6 +191,8 @@ public class App
         this.awsMaxConnections = DEFAULT_AWS_MAX_CONNECTIONS;
         this.awsConnectionTimeout = DEFAULT_AWS_CONNECTION_TIMEOUT;
         this.awsSocketTimeout = DEFAULT_AWS_SOCKET_TIMEOUT;
+
+        this.sizesAndThreads = DEFAULT_SIZES_AND_THREADS;
 
         loadProperties( properties );
 
@@ -266,6 +279,7 @@ public class App
                 this.awsConnectionTimeout = loadInt( properties, AWS_CONNECTION_TIMEOUT_KEY, DEFAULT_AWS_CONNECTION_TIMEOUT );
                 this.awsSocketTimeout = loadInt( properties, AWS_SOCKET_TIMEOUT_KEY, DEFAULT_AWS_SOCKET_TIMEOUT );
 
+                this.sizesAndThreads = properties.getProperty( SIZES_AND_THREADS_KEY, DEFAULT_SIZES_AND_THREADS );
             }
             catch( Exception e )
             {
@@ -477,9 +491,29 @@ public class App
 
         int count = 0;
         int objectSize = 0;
+        int threadCount = 0;
+
+        boolean useSizesAndThreadsConfig = sizesAndThreads != null && sizesAndThreads.length() > 0;
+        if (useSizesAndThreadsConfig) {
+          String[] split = sizesAndThreads.split(",");
+          String config = split[this.randomSelector.nextInt(ss.length)];
+          split = config.trim().split(":");
+          objectSize = parseObjectSize(split[0]);
+          threadCount = Integer.parseInt(split[1]);
+        }
+
         while ( bucket == null && count < MAX_BUCKET_TRIES )
         {
+            ++count;
             Bucket nextBucket = getRandomBucket( bucketList );
+            if (useSizesAndThreadsConfig) {
+                if (objectSize == objectSizeFromBucketName( nextBucket.getName() )) {
+                    bucket = nextBucket;
+                    break;
+                }
+                continue;
+            }
+
             objectSize = objectSizeFromBucketName( nextBucket.getName() );
             for ( int size : OBJECT_SIZES )
             {
@@ -489,7 +523,6 @@ public class App
                     break;
                 }
             }
-            ++count;
         }
 
         if ( bucket == null )
@@ -500,7 +533,7 @@ public class App
 
         if ( objectSize != 0 )
         {
-            info.threadCount = randomReadThreadCount( objectSize );
+            info.threadCount = (threadCount > 0) ? threadCount : randomReadThreadCount( objectSize );
             info.bucketName = bucket.getName();
             info.objectSize = objectSize;
             info.partialSize = objectSize;
@@ -531,6 +564,19 @@ public class App
                 tasks.add( task );
             }
         }
+    }
+
+    /**
+     * Parse an object size specifier like "256K" or "4M".
+     */
+    private static int parseObjectSize(String objectSize) {
+        char lastChar = objectSize.toLowerCase().charAt(objectSize.length() - 1);
+        int number = Integer.parseInt(objectSize.substring(0, objectSize.length() - 1));
+        if (lastChar == 'k')
+            return number * 1024;
+        if (lastChar == 'm')
+            return number * 1024 * 1024;
+        throw new RuntimeException("Can't parse size specifier [" + objectSize + "]);
     }
 
     private void prepareWrite( List<Bucket> bucketList, ArrayList<Task> tasks, TaskInfo info )
