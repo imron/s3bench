@@ -13,6 +13,7 @@ import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 
 import com.scalyr.api.logs.*;
+import java.io.*;
 
 import com.scalyr.s3bench.BucketInfo;
 import com.scalyr.s3bench.RandomIdBuffer;
@@ -115,6 +116,8 @@ public class App
     private static final String DEFAULT_SIZE_AND_THREAD_LIST = "";
 
 
+    private Logger logger;
+
     private long bucketSize;
     private String bucketPrefix;
     private String serverHost;
@@ -154,6 +157,10 @@ public class App
         }
 
         App app = new App( propertyFile );
+
+        for (int i = 0; i < args.length; i++)
+          app.logger.info("arg " + (i+1) + " of " + args.length + ": " + args[i]);
+
         try
         {
             app.run();
@@ -178,6 +185,8 @@ public class App
 
     public App( String properties )
     {
+        logger = LogManager.getFormatterLogger( App.class );
+
         this.maxBuckets = DEFAULT_MAX_BUCKETS;
         this.loopDelay = DEFAULT_LOOP_DELAY;
         this.loopIterations = DEFAULT_LOOP_ITERATIONS;
@@ -251,9 +260,9 @@ public class App
         {
             inputStream = new FileInputStream( filename );
         }
-        catch( Exception e )
+        catch( Exception ex )
         {
-            //ignore
+            logger.info("loadProperties: error opening properties file: " + ex);
         }
 
         if ( inputStream != null )
@@ -264,6 +273,9 @@ public class App
             try
             {
                 properties.load( new FileInputStream( filename ) );
+
+                StringWriter w = new StringWriter();
+                properties.list(new PrintWriter(w));
 
                 this.maxBuckets = loadInt( properties, MAX_BUCKETS_KEY, DEFAULT_MAX_BUCKETS );
                 this.loopDelay = loadInt( properties, LOOP_DELAY_KEY, DEFAULT_LOOP_DELAY );
@@ -280,10 +292,24 @@ public class App
                 this.awsSocketTimeout = loadInt( properties, AWS_SOCKET_TIMEOUT_KEY, DEFAULT_AWS_SOCKET_TIMEOUT );
 
                 this.sizesAndThreads = properties.getProperty( SIZE_AND_THREAD_LIST_KEY, DEFAULT_SIZE_AND_THREAD_LIST );
+
+                if (sizesAndThreads.startsWith("'"))
+                  sizesAndThreads = sizesAndThreads.substring(1);
+
+                if (sizesAndThreads.endsWith("'"))
+                  sizesAndThreads = sizesAndThreads.substring(0, sizesAndThreads.length() - 1);
+
+                if (sizesAndThreads.startsWith("\""))
+                  sizesAndThreads = sizesAndThreads.substring(1);
+                                    
+                if (sizesAndThreads.endsWith("\""))
+                  sizesAndThreads = sizesAndThreads.substring(0, sizesAndThreads.length() - 1);
+                              
             }
             catch( Exception e )
             {
                 System.out.println( "Error loading property file: '" + filename + "'." );
+                logger.info("Error loading property file '" + filename + "':" + e);
             }
         }
     }
@@ -419,6 +445,7 @@ public class App
             if ( b.getName().startsWith( this.bucketPrefix ) )
             {
                 result.add( b );
+                // logger.info("Found bucket " + b.getName());
             }
         }
 
@@ -495,11 +522,24 @@ public class App
 
         boolean useSizesAndThreadsConfig = sizesAndThreads != null && sizesAndThreads.length() > 0;
         if (useSizesAndThreadsConfig) {
-          String[] split = sizesAndThreads.split(",");
-          String config = split[this.randomSelector.nextInt(split.length)];
-          split = config.trim().split(":");
-          objectSize = parseObjectSize(split[0]);
-          threadCount = Integer.parseInt(split[1]);
+          try {
+            String[] split = sizesAndThreads.split(",");
+            int splitCount = split.length;
+            int splitIndex = this.randomSelector.nextInt(splitCount);
+            // logger.info("sizesAndThreads: splitCount " + splitCount + ", splitIndex " + splitIndex);
+            String config = split[splitIndex];
+            String[] split2 = config.trim().split(":");
+            objectSize = parseObjectSize(split2[0]);
+            threadCount = Integer.parseInt(split2[1]);
+  
+            // !!!
+            logger.info("sizesAndThreads: selecting objectSize " + objectSize + ", threadCount " + threadCount + " from [" + sizesAndThreads + "]"
+              + ", splitCount " + splitCount + ", splitIndex " + splitIndex + ", config " + config + ", objectSizeSpec " + split2[0]
+                );
+          } catch (RuntimeException ex) {
+            logger.info("Exception in useSizesAndThreadsConfig: " + ex);
+            throw ex;
+          }
         }
 
         while ( bucket == null && count < MAX_BUCKET_TRIES )
@@ -529,6 +569,8 @@ public class App
         {
             info.logger.error( "App.prepareRead - Failed to get bucket" );
             return;
+        } else {
+            logger.info("sizesAndThreads: selected bucket " + bucket.getName());
         }
 
         if ( objectSize != 0 )
@@ -697,7 +739,6 @@ public class App
 
             AmazonS3Client s3 = createS3Client();
 
-            Logger logger = LogManager.getFormatterLogger( App.class );
             TaskInfo info = new TaskInfo( logger, s3, null, null, 0, 0, VERSION );
 
             StatsAccumulator dummyAccumulator = new StatsAccumulator();
