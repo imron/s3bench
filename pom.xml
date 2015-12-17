@@ -13,13 +13,13 @@
       <programArguments>""</programArguments>
   </properties>
 
-	<repositories>
-			<repository>
-					<id>scalyr-all</id>
-					<name>Scalyr Artifactory</name>
-					<url>http://maven.scalyr.net/all</url>
-			</repository>
-	</repositories>
+  <repositories>
+      <repository>
+          <id>scalyr-all</id>
+          <name>Scalyr Artifactory</name>
+          <url>http://maven.scalyr.net/all</url>
+      </repository>
+  </repositories>
 
     <distributionManagement>
         <repository>
