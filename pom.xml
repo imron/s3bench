@@ -13,6 +13,27 @@
       <programArguments>""</programArguments>
   </properties>
 
+	<repositories>
+			<repository>
+					<id>scalyr-all</id>
+					<name>Scalyr Artifactory</name>
+					<url>http://maven.scalyr.net/all</url>
+			</repository>
+	</repositories>
+
+    <distributionManagement>
+        <repository>
+            <id>scalyr-release</id>
+            <name>Scalyr Artifactory (Releases)</name>
+            <url>http://maven.scalyr.net/artifactory/libs-release-local</url>
+        </repository>
+        <snapshotRepository>
+            <id>scalyr-snapshot</id>
+            <name>Scalyr Artifactory (Snapshots)</name>
+            <url>http://maven.scalyr.net/artifactory/libs-snapshot-local</url>
+        </snapshotRepository>
+    </distributionManagement>
+
   <dependencies>
     <dependency>
       <groupId>junit</groupId>
