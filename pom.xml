@@ -13,14 +13,6 @@
       <programArguments>""</programArguments>
   </properties>
 
-  <repositories>
-    <repository>
-      <id>in-project</id>
-      <name>In Project Repo</name>
-      <url>file://${project.basedir}/lib</url>
-    </repository>
-  </repositories>
-
   <dependencies>
     <dependency>
       <groupId>junit</groupId>
@@ -55,8 +47,8 @@
     </dependency>
     <dependency>
       <groupId>com.scalyr</groupId>
-      <artifactId>scalyr-api</artifactId>
-      <version>1.0.0</version>
+      <artifactId>ScalyrClient</artifactId>
+      <version>1.0.0-SNAPSHOT</version>
     </dependency>
   </dependencies>
 
